@@ -46,6 +46,8 @@
   const closeHangarBtn = document.getElementById('closeHangarBtn');
   const controlsDialog = document.getElementById('controlsDialog');
   const closeControlsBtn = document.getElementById('closeControlsBtn');
+  const installAppBtn = document.getElementById('installAppBtn');
+  const lockLandscapeBtn = document.getElementById('lockLandscapeBtn');
 
   // Touch Controls
   const touchControlsEl = document.getElementById('touchControls');
@@ -426,6 +428,8 @@
       this.viewW = window.innerWidth;
       this.viewH = window.innerHeight;
       this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.camZoom = 1.0;
+      this._deferredInstallPrompt = null;
 
       this.state = 'title';
       this.isCoarsePointer = Boolean(
@@ -487,6 +491,7 @@
       this._populateArmory();
       this._populateHangar();
       this.bindEvents();
+      this._initPwa();
       this.resize();
       refreshStartRecords();
 
@@ -786,10 +791,63 @@
       return orb;
     }
 
+    _initPwa() {
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      }
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        this._deferredInstallPrompt = e;
+        if (installAppBtn) installAppBtn.classList.remove('hidden');
+      });
+      window.addEventListener('appinstalled', () => {
+        this._deferredInstallPrompt = null;
+        if (installAppBtn) installAppBtn.classList.add('hidden');
+      });
+      if (installAppBtn) {
+        installAppBtn.addEventListener('click', async () => {
+          const promptEv = this._deferredInstallPrompt;
+          if (!promptEv) return;
+          this._deferredInstallPrompt = null;
+          installAppBtn.classList.add('hidden');
+          try {
+            promptEv.prompt();
+            await promptEv.userChoice;
+          } catch {}
+        });
+      }
+      if (lockLandscapeBtn) {
+        lockLandscapeBtn.addEventListener('click', () => this._requestLandscapeFullscreen());
+      }
+    }
+
+    _requestLandscapeFullscreen() {
+      try {
+        const el = document.documentElement;
+        if (!document.fullscreenElement && el.requestFullscreen) {
+          el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+        }
+      } catch {}
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(() => {});
+        }
+      } catch {}
+    }
+
     resize() {
       this.viewW = window.innerWidth;
       this.viewH = window.innerHeight;
-      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const maxDpr = this.isCoarsePointer ? 1.75 : 2;
+      this.dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+      // Responsive mobile landscape camera zoom: expands tactical field-of-view on compact screens
+      this.camZoom = this.viewH < 600 ? clamp(this.viewH / 620, 0.58, 1.0) : 1.0;
+
+      // Auto-pause if a mobile device rotates to portrait mid-game
+      if (this.state === 'playing' && (this.isCoarsePointer || this.viewW <= 900) && this.viewH > this.viewW) {
+        this.pauseGame();
+      }
+
       if (this.space) this.space.resize(this.viewW, this.viewH);
       if (this.renderer) {
         this.renderer.resize(this.viewW, this.viewH, this.dpr);
@@ -813,6 +871,7 @@
 
     bindEvents() {
       window.addEventListener('resize', () => this.resize());
+      window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 120));
 
       window.addEventListener('blur', () => {
         this._clearTransientInputs();
@@ -1070,6 +1129,9 @@
 
     startGame() {
       this._closeAllDialogs();
+      if (this.isCoarsePointer || Math.min(this.viewW, this.viewH) < 540) {
+        this._requestLandscapeFullscreen();
+      }
       window.ChaosAudio.ensureContext();
       window.ChaosAudio.startAmbient();
       window.ChaosAudio.setMusicDucked(false);
@@ -1633,8 +1695,8 @@
       this.shaker.update(dt);
       this.screenFlash.alpha = Math.max(0, this.screenFlash.alpha - 1.8 * dt);
 
-      this.mouse.worldX = this.camera.x - this.viewW / 2 + this.mouse.x;
-      this.mouse.worldY = this.camera.y - this.viewH / 2 + this.mouse.y;
+      this.mouse.worldX = this.camera.x + (this.mouse.x - this.viewW / 2) / this.camZoom;
+      this.mouse.worldY = this.camera.y + (this.mouse.y - this.viewH / 2) / this.camZoom;
 
       if (this.overdriveTimer > 0) {
         this.overdriveTimer -= dt;
@@ -1700,10 +1762,12 @@
       const lookY = this.touchStick.active
         ? this.touchStick.ay * 55
         : clamp((this.mouse.y - this.viewH / 2) * 0.14, -90, 90);
-      const minCamX = Math.min(ARENA_W * 0.5, this.viewW * 0.35);
-      const maxCamX = Math.max(ARENA_W * 0.5, ARENA_W - this.viewW * 0.35);
-      const minCamY = Math.min(ARENA_H * 0.5, this.viewH * 0.35);
-      const maxCamY = Math.max(ARENA_H * 0.5, ARENA_H - this.viewH * 0.35);
+      const effW = this.viewW / this.camZoom;
+      const effH = this.viewH / this.camZoom;
+      const minCamX = Math.min(ARENA_W * 0.5, effW * 0.35);
+      const maxCamX = Math.max(ARENA_W * 0.5, ARENA_W - effW * 0.35);
+      const minCamY = Math.min(ARENA_H * 0.5, effH * 0.35);
+      const maxCamY = Math.max(ARENA_H * 0.5, ARENA_H - effH * 0.35);
       const targetCamX = clamp(this.player.x + lookX, minCamX, maxCamX);
       const targetCamY = clamp(this.player.y + lookY, minCamY, maxCamY);
       this.camera.x += (targetCamX - this.camera.x) * Math.min(1, 8 * dt);
@@ -1912,7 +1976,7 @@
       if (this.enemies.length >= cap) return;
 
       const angle = Math.random() * Math.PI * 2;
-      const dist = Math.max(this.viewW, this.viewH) * 0.58 + 80;
+      const dist = (Math.max(this.viewW, this.viewH) / this.camZoom) * 0.56 + 70;
       const x = customX ?? clamp(this.player.x + Math.cos(angle) * dist, 40, ARENA_W - 40);
       const y = customY ?? clamp(this.player.y + Math.sin(angle) * dist, 40, ARENA_H - 40);
 

@@ -12,7 +12,16 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const JS_FILES = ['src/audio.js', 'src/space.js', 'src/titleScene.js', 'src/powerupIcons.js', 'src/ships.js', 'src/renderer.js', 'src/game.js'];
 const FONT_FILES = ['fonts/orbitron-latin.woff2', 'fonts/chakra-petch-latin.woff2'];
-const ASSET_FILES = ['assets/title-bg-1080p.webp', 'assets/title-bg-4k.webp'];
+const ASSET_FILES = [
+  'assets/title-bg-1080p.webp',
+  'assets/title-bg-4k.webp',
+  'assets/icons/icon-192.png',
+  'assets/icons/icon-512.png',
+  'assets/icons/icon-maskable-512.png',
+  'assets/icons/apple-touch-icon-180.png',
+  'manifest.webmanifest',
+  'sw.js',
+];
 
 function findEsbuild() {
   const candidates = [

@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>CHAOS TETHER // Hyper-Orbit Wrecking Arena</title>
+  <meta name="theme-color" content="#02030a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Chaos Tether">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon-180.png">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2304060e'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%2300f0ff' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%23ffffff'/%3E%3C/svg%3E">
   <link rel="preload" href="fonts/orbitron-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/chakra-petch-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -208,6 +215,15 @@
             </span>
             <span id="titleMuteLabel">AUDIO ON</span>
           </button>
+
+          <button id="installAppBtn" class="glass-btn glass-btn-install hidden" type="button" aria-label="Install Chaos Tether App">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v12"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <path d="M5 20h14"/>
+            </svg>
+            <span>INSTALL</span>
+          </button>
         </div>
       </nav>
 
@@ -315,6 +331,24 @@
       <button id="menuBtn" class="arcade-sec-btn" type="button">HANGAR MENU</button>
     </div>
   </dialog>
+
+  <!-- Mobile Portrait -> Landscape Rotation Lock Overlay -->
+  <div id="rotateOverlay" class="rotate-overlay" role="dialog" aria-modal="true" aria-labelledby="rotateTitle">
+    <div class="rotate-card">
+      <div class="rotate-icon" aria-hidden="true">
+        <svg viewBox="0 0 64 64" fill="none">
+          <rect x="20" y="10" width="24" height="44" rx="5" stroke="#00f0ff" stroke-width="2.6" fill="rgba(0,240,255,0.1)"/>
+          <circle cx="32" cy="48" r="2" fill="#00f0ff"/>
+          <path d="M49 20 A22 22 0 0 1 52 40" stroke="#ffd600" stroke-width="2.4" stroke-linecap="round"/>
+          <polyline points="47 38 52 41 55 36" stroke="#ffd600" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <span class="dialog-kicker">WIDESCREEN FLIGHT DECK</span>
+      <h2 id="rotateTitle">ROTATE TO LANDSCAPE</h2>
+      <p class="rotate-desc">Chaos Tether is engineered for horizontal widescreen combat. Turn your device sideways to deploy.</p>
+      <button id="lockLandscapeBtn" class="arcade-cta" type="button">ENTER LANDSCAPE FULLSCREEN</button>
+    </div>
+  </div>
 
   <script defer src="src/audio.js"></script>
   <script defer src="src/space.js"></script>

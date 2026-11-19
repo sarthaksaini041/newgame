@@ -1400,6 +1400,7 @@
       uniform vec4 uCamShake;
       uniform vec2 uShakeRot;
       uniform float uScreenSpace;
+      uniform float uZoom;
 
       out vec2 vUv;
       out vec4 vColor;
@@ -1417,7 +1418,7 @@
         if (uScreenSpace > 0.5) {
           screenPos = pos;
         } else {
-          vec2 camRel = pos - uCamShake.xy;
+          vec2 camRel = (pos - uCamShake.xy) * uZoom;
           vec2 camRot = vec2(
             camRel.x * uShakeRot.x - camRel.y * uShakeRot.y,
             camRel.x * uShakeRot.y + camRel.y * uShakeRot.x
@@ -1503,6 +1504,7 @@
         uCamShake: gl.getUniformLocation(this.instProg, 'uCamShake'),
         uShakeRot: gl.getUniformLocation(this.instProg, 'uShakeRot'),
         uScreenSpace: gl.getUniformLocation(this.instProg, 'uScreenSpace'),
+        uZoom: gl.getUniformLocation(this.instProg, 'uZoom'),
         uAtlas: gl.getUniformLocation(this.instProg, 'uAtlas'),
       };
 
@@ -1830,9 +1832,11 @@
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.texAtlas);
       gl.uniform1i(this.instLocs.uAtlas, 0);
+      const zoom = game.camZoom || 1.0;
       gl.uniform2f(this.instLocs.uView, this.viewW, this.viewH);
       gl.uniform4f(this.instLocs.uCamShake, camX, camY, shake.x, shake.y);
       gl.uniform2f(this.instLocs.uShakeRot, Math.cos(shake.angle), Math.sin(shake.angle));
+      gl.uniform1f(this.instLocs.uZoom, zoom);
 
       this.instCount = 0;
       this._curAdditive = null;
@@ -1922,11 +1926,13 @@
       const ARENA_W = 2200;
       const ARENA_H = 1600;
 
+      const viewHalfW = (this.viewW * 0.5) / zoom;
+      const viewHalfH = (this.viewH * 0.5) / zoom;
       const step = 180;
-      const startX = Math.max(step, Math.floor((camX - this.viewW / 2) / step) * step);
-      const endX = Math.min(ARENA_W - step, Math.ceil((camX + this.viewW / 2) / step) * step);
-      const startY = Math.max(step, Math.floor((camY - this.viewH / 2) / step) * step);
-      const endY = Math.min(ARENA_H - step, Math.ceil((camY + this.viewH / 2) / step) * step);
+      const startX = Math.max(step, Math.floor((camX - viewHalfW) / step) * step);
+      const endX = Math.min(ARENA_W - step, Math.ceil((camX + viewHalfW) / step) * step);
+      const startY = Math.max(step, Math.floor((camY - viewHalfH) / step) * step);
+      const endY = Math.min(ARENA_H - step, Math.ceil((camY + viewHalfH) / step) * step);
       const gr = overdrive ? 1.0 : 0.59;
       const gg = overdrive ? 0.84 : 0.86;
       const gb = overdrive ? 0.0 : 1.0;
@@ -1937,8 +1943,6 @@
         }
       }
 
-      const viewHalfW = this.viewW * 0.5;
-      const viewHalfH = this.viewH * 0.5;
       const vMinX = camX - viewHalfW - 40;
       const vMaxX = camX + viewHalfW + 40;
       const vMinY = camY - viewHalfH - 40;
@@ -2483,9 +2487,11 @@
       }
       this.space.draw(ctx, camX, camY, game.player.vx, game.player.vy, overdrive);
 
+      const zoom = game.camZoom || 1.0;
       ctx.save();
       ctx.translate(this.viewW / 2 + shake.x, this.viewH / 2 + shake.y);
       ctx.rotate(shake.angle);
+      ctx.scale(zoom, zoom);
       ctx.translate(-camX, -camY);
 
       const ARENA_W = 2200;
