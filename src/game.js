@@ -299,10 +299,10 @@
         <path d="M24 15.8 V31.2 M16.3 23.5 H31.7" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round"/>
       </svg>`,
       title: 'Siphon Core',
-      getDesc: (next) => `+1 Max Hull (max 10), restore +1 Hull now, and repair +1 Hull every ${Math.max(6, 18 - next * 3)} kills (or +${10 + next * 4}% Nova at full Hull).`,
+      getDesc: (next) => `+20 Max Hull (max 200), restore +20 Hull now, and repair +20 Hull every ${Math.max(6, 18 - next * 3)} kills (or +${10 + next * 4}% Nova at full Hull).`,
       apply: (g) => {
-        if (g.player.maxHp < 10) g.player.maxHp += 1;
-        g.player.hp = Math.min(g.player.maxHp, g.player.hp + 1);
+        if (g.player.maxHp < 200) g.player.maxHp = Math.min(200, g.player.maxHp + 20);
+        g.player.hp = Math.min(g.player.maxHp, g.player.hp + 20);
       },
     },
     {
@@ -338,9 +338,9 @@
       <circle cx="24" cy="24" r="3.6" fill="#ffffff"/>
     </svg>`,
     title: 'Core Surge',
-    getDesc: () => 'Repair +1 Hull, gain +45% Nova charge, and amplify all core damage by +15%.',
+    getDesc: () => 'Repair +20 Hull, gain +45% Nova charge, and amplify all core damage by +15%.',
     apply: (g) => {
-      g.player.hp = Math.min(g.player.maxHp, g.player.hp + 1);
+      g.player.hp = Math.min(g.player.maxHp, g.player.hp + 20);
       if (g.overdriveTimer <= 0) g.overdrive = Math.min(100, g.overdrive + 45);
     },
   };
@@ -668,7 +668,7 @@
       }
       if (scoreText) scoreText.classList.remove('score-pop');
       this.wave = 1;
-      this.nextBossTime = 40;
+      this.nextBossLevel = 5;
       this.spawnTimer = 0;
       this.overdrive = 0;
       this.overdriveTimer = 0;
@@ -703,8 +703,8 @@
         aimAngle: 0,
         bank: 0,
         radius: 17,
-        hp: 5,
-        maxHp: 5,
+        hp: 100,
+        maxHp: 100,
         invuln: 0,
         dashTimer: 0,
         dashCd: 0,
@@ -1881,16 +1881,17 @@
     }
 
     updateSpawning(dt) {
-      if (this.elapsed >= this.nextBossTime) {
+      // Spawn a Colossal Milestone Boss after every 5 player levels (LVL 5, 10, 15, 20, ...)
+      if (this.player.level >= this.nextBossLevel) {
         let bossCount = 0;
         for (let i = 0; i < this.enemies.length; i++) {
           if (this.enemies[i].isBoss) bossCount++;
         }
         if (bossCount < MAX_BOSSES) {
-          this.spawnBoss();
-          this.nextBossTime += 45;
-        } else {
-          this.nextBossTime = this.elapsed + 10;
+          const milestone = this.nextBossLevel;
+          const tier = Math.max(1, Math.floor(milestone / 5));
+          this.spawnBoss(milestone, tier);
+          this.nextBossLevel += 5;
         }
       }
 
@@ -1957,14 +1958,20 @@
       this._gridDirty = true;
     }
 
-    spawnBoss() {
+    spawnBoss(milestoneLevel = null, bossTier = null) {
+      const lvl = milestoneLevel || Math.max(5, Math.ceil(this.player.level / 5) * 5);
+      const tier = bossTier || Math.max(1, Math.floor(lvl / 5));
+      const titles = ['OMEGA DREADNOUGHT', 'HYPER-LEVIATHAN', 'VOID COLOSSUS', 'SOLAR ANNIHILATOR'];
+      const baseTitle = tier <= titles.length ? titles[tier - 1] : `GALACTIC OVERLORD MK-${tier}`;
       const angle = Math.random() * Math.PI * 2;
-      const x = clamp(this.player.x + Math.cos(angle) * 520, 80, ARENA_W - 80);
-      const y = clamp(this.player.y + Math.sin(angle) * 520, 80, ARENA_H - 80);
-      const hp = 520 + this.wave * 180;
+      const x = clamp(this.player.x + Math.cos(angle) * 560, 140, ARENA_W - 140);
+      const y = clamp(this.player.y + Math.sin(angle) * 560, 140, ARENA_H - 140);
+      // 3x+ bigger radius (105px vs Tank 29px / Swarmer 15px) & significantly stronger escalating HP
+      const hp = Math.round((1800 + tier * 1400 + this.wave * 420) * (1 + (tier - 1) * 0.25));
       const boss = this._enemyPool.pop() || {};
       boss.type = 'boss';
-      boss.name = this.wave >= 6 ? 'HYPER-LEVIATHAN' : 'OMEGA CORE';
+      boss.name = `LVL ${lvl} ${baseTitle}`;
+      boss.bossTier = tier;
       boss.x = x;
       boss.y = y;
       boss.prevX = x;
@@ -1972,27 +1979,29 @@
       boss.vx = 0;
       boss.vy = 0;
       boss.angle = 0;
-      boss.radius = 50;
+      boss.radius = 105;
       boss.hp = hp;
       boss.maxHp = hp;
-      boss.speed = 92;
+      boss.speed = Math.min(145, 86 + tier * 6);
       boss.color = '#ff2a6d';
-      boss.xp = 45;
-      boss.score = 1200;
+      boss.xp = 65 + tier * 15;
+      boss.score = 3500 * tier;
       boss.flash = 0;
       boss.hitCd = 0;
       boss.beamHitCd = 0;
       boss.dashState = 0;
       boss.dashTimer = 0;
-      boss.shootTimer = 2.2;
+      boss.shootTimer = Math.max(1.5, 2.3 - tier * 0.12);
       boss.isBoss = true;
       boss._boltStamp = 0;
       boss._idx = this.enemies.length;
       this.enemies.push(boss);
       this._gridDirty = true;
       window.ChaosAudio.playBossWarning();
-      this.shaker.add(0.45);
-      this.pushFloatingText(this.player.x, this.player.y - 54, `⚠ ${boss.name} DETECTED!`, '#ff2a6d', 2.0, 1.45);
+      this.shaker.add(0.65);
+      this.screenFlash = { alpha: 0.24, color: '#ff2a6d' };
+      this._pushShockwave(x, y, 40, 340, '#ff2a6d', 0.95);
+      this.pushFloatingText(this.player.x, this.player.y - 58, `⚠ ${boss.name}!`, '#ff2a6d', 2.4, 1.5);
     }
 
     updateBlackHoles(dt) {
@@ -2125,15 +2134,20 @@
         if (e.isBoss) {
           e.shootTimer -= dt;
           if (e.shootTimer <= 0) {
-            e.shootTimer = 2.6;
+            const tier = e.bossTier || 1;
+            e.shootTimer = Math.max(1.5, 2.4 - tier * 0.12);
+            const salvoSize = Math.min(22, 12 + tier * 2);
             const availBullets = MAX_ENEMY_BULLETS - this.enemyBullets.length;
-            const count = Math.min(10, availBullets);
+            const count = Math.min(salvoSize, availBullets);
+            const bSpd = Math.min(340, 235 + tier * 16);
             for (let k = 0; k < count; k++) {
-              const a = (k / 10) * Math.PI * 2 + this.elapsed;
+              const a = (k / Math.max(1, count)) * Math.PI * 2 + this.elapsed;
               const b = this._bulletPool.pop() || {};
-              b.x = e.x; b.y = e.y; b.prevX = e.x; b.prevY = e.y;
-              b.vx = Math.cos(a) * 235; b.vy = Math.sin(a) * 235;
-              b.radius = 7; b.life = 4.5;
+              b.x = e.x + Math.cos(a) * (e.radius * 0.72);
+              b.y = e.y + Math.sin(a) * (e.radius * 0.72);
+              b.prevX = b.x; b.prevY = b.y;
+              b.vx = Math.cos(a) * bSpd; b.vy = Math.sin(a) * bSpd;
+              b.radius = 9; b.life = 4.8; b.isBullet = true;
               this.enemyBullets.push(b);
             }
           }
@@ -2338,10 +2352,10 @@
         if (this.vampiricKillCounter >= threshold) {
           this.vampiricKillCounter = 0;
           if (this.player.hp < this.player.maxHp) {
-            this.player.hp += 1;
+            this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20);
             this._pushShockwave(this.player.x, this.player.y, 14, 125, '#05ffa1', 0.92);
             this.spawnBurst(this.player.x, this.player.y, '#05ffa1', 14, 240);
-            this.pushFloatingText(this.player.x, this.player.y - 36, '+1 HULL', '#05ffa1', 1.15, 1.15);
+            this.pushFloatingText(this.player.x, this.player.y - 36, '+20 HULL', '#05ffa1', 1.15, 1.15);
           } else if (this.overdriveTimer <= 0 && this.overdrive < 100) {
             const novaGain = 10 + this.mods.vampiric * 4;
             this.overdrive = Math.min(100, this.overdrive + novaGain);
@@ -2481,17 +2495,29 @@
       if (this._enemyPool.length < 256) this._enemyPool.push(e);
     }
 
+    getEnemyDamage(source) {
+      // Base 20 hull dmg on Wave 1, increasing +8% after every single wave
+      const waveMult = 1 + Math.max(0, this.wave - 1) * 0.08;
+      let mult = 1.0;
+      if (source && source.isBoss) mult = 1.5;
+      else if (source && source.isBullet) mult = 0.85;
+      else if (source && source.type === 'tank') mult = 1.15;
+      return Math.max(1, Math.round(20 * waveMult * mult));
+    }
+
     hurtPlayer(source) {
       const p = this.player;
-      p.hp -= 1;
+      const dmg = this.getEnemyDamage(source);
+      p.hp = Math.max(0, p.hp - dmg);
       p.invuln = 1.1;
       this.combo = 1;
       this.comboTimer = 0;
       this.comboScore = 0;
-      this.shaker.add(0.6);
+      this.shaker.add(source && source.isBoss ? 0.78 : 0.6);
       this.screenFlash = { alpha: 0.38, color: '#ff2a6d' };
       window.ChaosAudio.playPlayerHurt();
       this.spawnBurst(p.x, p.y, '#ff2a6d', 24, 360);
+      this.pushFloatingText(p.x, p.y - 34, `-${dmg} HULL`, '#ff2a6d', 1.05, 1.38);
 
       if (source) {
         const dx = p.x - source.x;
@@ -2575,11 +2601,11 @@
         pr.x += pr.vx * dt;
         pr.y += pr.vy * dt;
 
-        // Tombstone-safe spatial grid impact check (only checks 1-4 immediate cells)
-        const hcx0 = Math.max(0, ((pr.x - 64) / CELL_SIZE) | 0);
-        const hcx1 = Math.min(GRID_COLS - 1, ((pr.x + 64) / CELL_SIZE) | 0);
-        const hcy0 = Math.max(0, ((pr.y - 64) / CELL_SIZE) | 0);
-        const hcy1 = Math.min(GRID_ROWS - 1, ((pr.y + 64) / CELL_SIZE) | 0);
+        // Tombstone-safe spatial grid impact check (120px margin covers colossal r=105 Milestone Bosses!)
+        const hcx0 = Math.max(0, ((pr.x - 120) / CELL_SIZE) | 0);
+        const hcx1 = Math.min(GRID_COLS - 1, ((pr.x + 120) / CELL_SIZE) | 0);
+        const hcy0 = Math.max(0, ((pr.y - 120) / CELL_SIZE) | 0);
+        const hcy1 = Math.min(GRID_ROWS - 1, ((pr.y + 120) / CELL_SIZE) | 0);
         let hit = false;
         for (let cy = hcy0; cy <= hcy1 && !hit; cy++) {
           const rowOff = cy * GRID_COLS;
@@ -2772,24 +2798,28 @@
       const p = this.player;
       const c = this._hudCache;
 
-      if (c.maxHp !== p.maxHp) {
+      const cellCount = Math.max(5, Math.round(p.maxHp / 20));
+      if (c.maxHpCells !== cellCount) {
         hpCellsEl.innerHTML = '';
-        for (let i = 0; i < p.maxHp; i++) {
+        for (let i = 0; i < cellCount; i++) {
           const cell = document.createElement('div');
           cell.className = 'hp-cell';
           hpCellsEl.appendChild(cell);
         }
-        c.maxHp = p.maxHp;
+        c.maxHpCells = cellCount;
         c.hp = -1;
       }
 
-      if (c.hp !== p.hp) {
+      const hpInt = Math.ceil(p.hp);
+      if (c.hp !== hpInt || c.maxHpVal !== p.maxHp) {
+        const activeCells = hpInt > 0 ? Math.max(1, Math.ceil((hpInt / p.maxHp) * cellCount)) : 0;
         const children = hpCellsEl.children;
         for (let i = 0; i < children.length; i++) {
-          children[i].classList.toggle('active', i < p.hp);
+          children[i].classList.toggle('active', i < activeCells);
         }
-        setText(hpText, `${p.hp}/${p.maxHp}`);
-        c.hp = p.hp;
+        setText(hpText, `${hpInt}/${p.maxHp}`);
+        c.hp = hpInt;
+        c.maxHpVal = p.maxHp;
       }
 
       if (c.level !== p.level) {
