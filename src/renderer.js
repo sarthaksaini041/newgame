@@ -610,17 +610,41 @@
           }
         }
       };
+      // Luminous comic backlight aura so black ink outlines pop crisply against dark space (0 runtime cost!)
+      const drawComicBacklight = (ctx, r, rgb, peak = 0.52) => {
+        const g = ctx.createRadialGradient(0, 0, r * 0.25, 0, 0, r);
+        g.addColorStop(0, `rgba(${rgb}, ${peak})`);
+        g.addColorStop(0.62, `rgba(${rgb}, ${(peak * 0.45).toFixed(2)})`);
+        g.addColorStop(1, `rgba(${rgb}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+      };
+      // Crisp glowing ship navigation / thruster / beacon light dot
+      const drawGlowLight = (ctx, x, y, r, rgb, core = '#ffffff') => {
+        const g = ctx.createRadialGradient(x, y, 0.2, x, y, r * 3.0);
+        g.addColorStop(0, `rgba(${rgb}, 0.95)`);
+        g.addColorStop(0.45, `rgba(${rgb}, 0.45)`);
+        g.addColorStop(1, `rgba(${rgb}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r * 3.0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = core;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      };
 
-      // 1. Swarmer: Comic-Book Crimson Viper Raider (bold black ink outline, cel-shaded split hull, Ben-Day shadow dots, angry comic visor)
+      // 1. Swarmer: Comic-Book Crimson Viper Raider (luminous neon rim + bold ink + wingtip & thruster lights)
       reg('enemy_swarmer', 2, 290, 92, 92, (ctx) => {
         ctx.scale(2, 2);
         const r = 15.5;
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
 
-        // Subtle outer comic pop aura
-        ctx.shadowColor = '#ff2a6d';
-        ctx.shadowBlur = 7;
+        drawComicBacklight(ctx, r + 6.5, '255, 62, 128', 0.56);
 
         const swarmerPath = () => {
           ctx.beginPath();
@@ -637,19 +661,24 @@
           ctx.closePath();
         };
 
+        // Neon outer comic rim-light behind the black ink silhouette
+        swarmerPath();
+        ctx.strokeStyle = 'rgba(255, 130, 175, 0.88)';
+        ctx.lineWidth = 4.2;
+        ctx.stroke();
+
         // Base vibrant comic crimson fill
         swarmerPath();
         ctx.fillStyle = '#ff2a6d';
         ctx.fill();
 
         // Cel-shaded lower-half shadow + Ben-Day halftone dots clipped to hull
-        ctx.shadowBlur = 0;
         ctx.save();
         swarmerPath();
         ctx.clip();
-        ctx.fillStyle = '#9f1239';
+        ctx.fillStyle = '#b91c48';
         ctx.fillRect(-r - 4, 0, r * 2 + 10, r + 4);
-        drawHalftone(ctx, -r, 1, r, r, 3.2, 0.72, 'rgba(6, 7, 13, 0.48)');
+        drawHalftone(ctx, -r, 1, r, r, 3.2, 0.72, 'rgba(6, 7, 13, 0.42)');
         // Stark white comic highlight slash along upper leading edge
         ctx.fillStyle = '#fff1f2';
         ctx.beginPath();
@@ -665,13 +694,13 @@
         // Bold graphic-novel black ink outline
         swarmerPath();
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 2.4;
+        ctx.lineWidth = 2.2;
         ctx.stroke();
 
         // Dark inked cockpit recess + slanted angry yellow comic eyes
         ctx.fillStyle = '#140818';
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(9.5, 0);
         ctx.lineTo(-3.5, -4.6);
@@ -687,25 +716,20 @@
         ctx.moveTo(6.8, 0.6); ctx.lineTo(0.5, 3.1); ctx.lineTo(-0.4, 0.9); ctx.closePath();
         ctx.fill();
 
-        // Twin comic white-hot thruster dots
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = INK;
-        ctx.lineWidth = 1.0;
-        for (const sgn of [-1, 1]) {
-          ctx.beginPath();
-          ctx.arc(-10.2, sgn * 3.0, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        }
+        // Bright glowing wingtip nav beacons + twin rear thruster lights
+        drawGlowLight(ctx, -r * 0.82, -r * 0.88, 1.5, '255, 214, 0');
+        drawGlowLight(ctx, -r * 0.82, r * 0.88, 1.5, '255, 214, 0');
+        drawGlowLight(ctx, -10.5, -3.0, 1.6, '255, 110, 165');
+        drawGlowLight(ctx, -10.5, 3.0, 1.6, '255, 110, 165');
       });
 
-      // 2. Mini: Comic-Book Fission Wasp Drone (punchy magenta cel-shade, inked pincer fangs, bright yellow comic eye)
+      // 2. Mini: Comic-Book Fission Wasp Drone (luminous magenta rim + glowing yellow eye & pincer lights)
       reg('enemy_mini', 98, 290, 72, 72, (ctx) => {
         ctx.scale(2, 2);
         const r = 11;
         ctx.lineJoin = 'round';
-        ctx.shadowColor = '#e879f9';
-        ctx.shadowBlur = 6;
+
+        drawComicBacklight(ctx, r + 5.5, '232, 121, 249', 0.62);
 
         const miniPath = () => {
           ctx.beginPath();
@@ -721,45 +745,48 @@
         };
 
         miniPath();
-        ctx.fillStyle = '#d946ef';
+        ctx.strokeStyle = 'rgba(245, 208, 254, 0.92)';
+        ctx.lineWidth = 3.8;
+        ctx.stroke();
+
+        miniPath();
+        ctx.fillStyle = '#e879f9';
         ctx.fill();
 
-        ctx.shadowBlur = 0;
         ctx.save();
         miniPath();
         ctx.clip();
-        ctx.fillStyle = '#701a75';
+        ctx.fillStyle = '#9333ea';
         ctx.fillRect(-r - 2, 0, r * 2 + 6, r + 2);
-        ctx.fillStyle = '#fae8ff';
-        ctx.fillRect(-6, -9, 14, 3.2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-6, -9, 14, 3.0);
         ctx.restore();
 
         miniPath();
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 2.2;
+        ctx.lineWidth = 2.0;
         ctx.stroke();
 
-        // Bold inked yellow comic cyclops core
+        // Bold inked yellow comic cyclops core + glowing nose beacon lights
         ctx.fillStyle = '#ffd600';
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(0.2, 0, 3.8, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(1.2, -1.0, 1.4, 0, Math.PI * 2);
-        ctx.fill();
+        drawGlowLight(ctx, 0.6, -0.4, 1.5, '255, 230, 80');
+        drawGlowLight(ctx, r + 1.0, -2.2, 1.1, '0, 240, 255');
+        drawGlowLight(ctx, r + 1.0, 2.2, 1.1, '0, 240, 255');
       });
 
-      // 3. Splitter: Comic-Book Tri-Wing Violet Fission Carrier (inked tri-blades, halftone shadow, glowing cyan/magenta comic pods)
+      // 3. Splitter: Comic-Book Tri-Wing Violet Fission Carrier (bright neon violet rim + glowing beacon pods & fin tips)
       reg('enemy_splitter', 174, 290, 116, 116, (ctx) => {
         ctx.scale(2, 2);
         const r = 22.5;
         ctx.lineJoin = 'round';
-        ctx.shadowColor = '#b829ff';
-        ctx.shadowBlur = 8;
+
+        drawComicBacklight(ctx, r + 6.0, '192, 132, 252', 0.58);
 
         const splitPath = () => {
           ctx.beginPath();
@@ -773,24 +800,27 @@
         };
 
         splitPath();
-        ctx.fillStyle = '#a855f7';
+        ctx.strokeStyle = 'rgba(233, 213, 255, 0.9)';
+        ctx.lineWidth = 4.4;
+        ctx.stroke();
+
+        splitPath();
+        ctx.fillStyle = '#c084fc';
         ctx.fill();
 
-        ctx.shadowBlur = 0;
         ctx.save();
         splitPath();
         ctx.clip();
-        ctx.fillStyle = '#581c87';
+        ctx.fillStyle = '#7e22ce';
         ctx.fillRect(-r - 4, 2, r * 2 + 8, r + 4);
-        drawHalftone(ctx, -r, 2, r, r, 3.6, 0.85, 'rgba(6, 7, 13, 0.45)');
-        // Crisp comic top-edge highlight band
-        ctx.fillStyle = '#f3e8ff';
+        drawHalftone(ctx, -r, 2, r, r, 3.6, 0.85, 'rgba(6, 7, 13, 0.38)');
+        ctx.fillStyle = '#faf5ff';
         ctx.fillRect(-r, -r - 2, r * 2, 6);
         ctx.restore();
 
         splitPath();
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 2.6;
+        ctx.lineWidth = 2.4;
         ctx.stroke();
 
         // Dark inked central reactor well
@@ -802,7 +832,7 @@
         ctx.fill();
         ctx.stroke();
 
-        // Comic lightning spokes + 3 inked fission bulbs
+        // Comic lightning spokes + 3 glowing fission bulbs + 3 outer wingtip lights
         for (let k = 0; k < 3; k++) {
           const a = (k * Math.PI * 2) / 3 - Math.PI / 2;
           const px = Math.cos(a) * 7.6;
@@ -820,28 +850,21 @@
           ctx.arc(px, py, 3.9, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
+          drawGlowLight(ctx, px, py, 1.5, '255, 90, 150');
 
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(px - 1.0, py - 1.0, 1.3, 0, Math.PI * 2);
-          ctx.fill();
+          // Bright cyan navigation light on each of the 3 main fin tips
+          drawGlowLight(ctx, Math.cos(a) * (r + 0.5), Math.sin(a) * (r + 0.5), 1.6, '0, 240, 255');
         }
-        ctx.fillStyle = '#00f0ff';
-        ctx.strokeStyle = INK;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        drawGlowLight(ctx, 0, 0, 2.4, '0, 240, 255');
       });
 
-      // 4. Dasher: Comic-Book Hot-Pink Rail-Lance Sniper (inked scythe blades, comic speed stripes, blazing yellow rail core)
+      // 4. Dasher: Comic-Book Hot-Pink Rail-Lance Sniper (neon magenta rim + bright yellow strobe tips & blazing rail)
       reg('enemy_dasher', 294, 290, 100, 100, (ctx) => {
         ctx.scale(2, 2);
         const r = 18.5;
         ctx.lineJoin = 'round';
-        ctx.shadowColor = '#ff0099';
-        ctx.shadowBlur = 8;
+
+        drawComicBacklight(ctx, r + 6.0, '255, 45, 165', 0.58);
 
         const dashPath = () => {
           ctx.beginPath();
@@ -859,17 +882,20 @@
         };
 
         dashPath();
-        ctx.fillStyle = '#ff1a8c';
+        ctx.strokeStyle = 'rgba(255, 153, 214, 0.9)';
+        ctx.lineWidth = 4.2;
+        ctx.stroke();
+
+        dashPath();
+        ctx.fillStyle = '#ff2a9d';
         ctx.fill();
 
-        ctx.shadowBlur = 0;
         ctx.save();
         dashPath();
         ctx.clip();
-        ctx.fillStyle = '#9d174d';
+        ctx.fillStyle = '#be185d';
         ctx.fillRect(-r - 2, 0, r * 2 + 8, r + 2);
-        drawHalftone(ctx, -r, 1, r, r, 3.4, 0.78, 'rgba(6, 7, 13, 0.45)');
-        // Bold comic white action stripe on upper blade
+        drawHalftone(ctx, -r, 1, r, r, 3.4, 0.78, 'rgba(6, 7, 13, 0.38)');
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.moveTo(r + 2, -1.0);
@@ -882,7 +908,7 @@
 
         dashPath();
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = 2.3;
         ctx.stroke();
 
         // Inked accelerator barrel + blazing comic yellow plasma lance
@@ -902,27 +928,27 @@
         ctx.beginPath();
         ctx.moveTo(r * 0.85, 0); ctx.lineTo(-r * 0.32, 0);
         ctx.stroke();
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(r * 0.52, 0, 2.3, 0, Math.PI * 2);
-        ctx.fill();
+
+        // Glowing sniper core + twin forward scythe wingtip strobe lights
+        drawGlowLight(ctx, r * 0.52, 0, 2.2, '255, 224, 60');
+        drawGlowLight(ctx, r * 0.56, -r * 0.88, 1.5, '255, 214, 0');
+        drawGlowLight(ctx, r * 0.56, r * 0.88, 1.5, '255, 214, 0');
       });
 
-      // 5. Bomber: Comic-Book Toxic Hazard Core-Carrier (yellow/black comic caution stripes, inked clamps, glowing emerald cel-orb)
+      // 5. Bomber: Comic-Book Toxic Hazard Core-Carrier (bright emerald aura + 4 lit hazard tip beacons + glowing core)
       reg('enemy_bomber', 398, 290, 108, 108, (ctx) => {
         ctx.scale(2, 2);
         const r = 20.5;
         ctx.lineJoin = 'round';
-        ctx.shadowColor = '#05ffa1';
-        ctx.shadowBlur = 8;
 
-        // 4 bold comic-inked industrial hazard clamps with yellow/black stripes
+        drawComicBacklight(ctx, r + 6.0, '5, 255, 161', 0.6);
+
+        // 4 bold comic-inked industrial hazard clamps with yellow/black stripes + glowing tip lights
         for (let k = 0; k < 4; k++) {
           ctx.save();
           ctx.rotate((k * Math.PI) / 2 + Math.PI / 4);
-          ctx.fillStyle = '#ffd600';
-          ctx.strokeStyle = INK;
-          ctx.lineWidth = 2.2;
+          ctx.strokeStyle = 'rgba(167, 243, 208, 0.88)';
+          ctx.lineWidth = 4.0;
           ctx.beginPath();
           ctx.moveTo(8, -5.8);
           ctx.lineTo(r + 2.2, -4.6);
@@ -930,44 +956,44 @@
           ctx.lineTo(r + 2.2, 4.6);
           ctx.lineTo(8, 5.8);
           ctx.closePath();
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffd600';
+          ctx.strokeStyle = INK;
+          ctx.lineWidth = 2.1;
           ctx.fill();
           ctx.stroke();
 
           // Bold black comic hazard stripes
-          ctx.shadowBlur = 0;
           ctx.fillStyle = INK;
           ctx.fillRect(11.5, -4.5, 2.6, 9.0);
           ctx.fillRect(16.8, -3.8, 2.6, 7.6);
+          drawGlowLight(ctx, r + 2.0, 0, 1.5, '5, 255, 161');
           ctx.restore();
         }
 
         // Bold inked cel-shaded toxic plasma core
-        ctx.shadowBlur = 0;
         ctx.fillStyle = '#05ffa1';
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 2.6;
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
         ctx.arc(0, 0, 13.4, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
 
-        // Cel-shaded shadow crescent + halftone dots inside core
         ctx.save();
         ctx.beginPath();
         ctx.arc(0, 0, 12.2, 0, Math.PI * 2);
         ctx.clip();
-        ctx.fillStyle = '#059669';
+        ctx.fillStyle = '#10b981';
         ctx.beginPath();
         ctx.arc(4.2, 4.2, 12.2, 0, Math.PI * 2);
         ctx.fill();
-        drawHalftone(ctx, -2, -2, 12, 12, 3.2, 0.72, 'rgba(6, 7, 13, 0.35)');
+        drawHalftone(ctx, -2, -2, 12, 12, 3.2, 0.72, 'rgba(6, 7, 13, 0.3)');
         ctx.restore();
 
-        // Comic specular highlight & stylized danger X-eye
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(-4.6, -4.6, 3.4, 0, Math.PI * 2);
-        ctx.fill();
+        // Bright glowing core light + stylized danger X-eye
+        drawGlowLight(ctx, -4.4, -4.4, 2.8, '180, 255, 225');
         ctx.strokeStyle = INK;
         ctx.lineWidth = 1.8;
         ctx.beginPath();
@@ -976,25 +1002,24 @@
         ctx.stroke();
       });
 
-      // 6. Tank: Comic-Book Heavy Armored Aegis Jugger (chunky black ink plates, rivets, hazard stripes, comic front shield)
+      // 6. Tank: Comic-Book Heavy Armored Aegis Jugger (golden rim-light + lit cannon muzzles + front headlights)
       reg('enemy_tank', 510, 290, 156, 156, (ctx) => {
         ctx.scale(2, 2);
         const r = 28;
         ctx.lineJoin = 'round';
-        ctx.shadowColor = '#ff9e00';
-        ctx.shadowBlur = 8;
 
-        // Twin chunky comic-inked plasma cannons
+        drawComicBacklight(ctx, r + 10.0, '255, 175, 20', 0.52);
+
+        // Twin chunky comic-inked plasma cannons with glowing muzzle lights
         for (const sgn of [-1, 1]) {
-          ctx.fillStyle = '#475569';
+          ctx.fillStyle = '#64748b';
           ctx.strokeStyle = INK;
-          ctx.lineWidth = 2.4;
+          ctx.lineWidth = 2.3;
           ctx.beginPath();
           ctx.rect(4, sgn > 0 ? 15.2 : -20.8, 18.5, 5.6);
           ctx.fill();
           ctx.stroke();
-          ctx.fillStyle = '#ffd600';
-          ctx.fillRect(17, sgn > 0 ? 16.4 : -19.6, 4.0, 3.2);
+          drawGlowLight(ctx, 21.5, sgn > 0 ? 18.0 : -18.0, 1.8, '255, 220, 60');
         }
 
         const tankPath = () => {
@@ -1009,27 +1034,30 @@
         };
 
         tankPath();
-        ctx.fillStyle = '#f59e0b';
+        ctx.strokeStyle = 'rgba(254, 240, 138, 0.88)';
+        ctx.lineWidth = 4.6;
+        ctx.stroke();
+
+        tankPath();
+        ctx.fillStyle = '#fbbf24';
         ctx.fill();
 
-        ctx.shadowBlur = 0;
         ctx.save();
         tankPath();
         ctx.clip();
-        ctx.fillStyle = '#b45309';
+        ctx.fillStyle = '#d97706';
         ctx.fillRect(-r - 4, 2, r * 2 + 8, r + 4);
-        drawHalftone(ctx, -r, 3, r, r, 4.0, 0.95, 'rgba(6, 7, 13, 0.42)');
-        // Stark comic cream highlight bar along top armor bevel
-        ctx.fillStyle = '#fef3c7';
+        drawHalftone(ctx, -r, 3, r, r, 4.0, 0.95, 'rgba(6, 7, 13, 0.36)');
+        ctx.fillStyle = '#fef9c3';
         ctx.fillRect(-r, -r, r * 2, 7.5);
         ctx.restore();
 
         tankPath();
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 2.8;
+        ctx.lineWidth = 2.6;
         ctx.stroke();
 
-        // Inked armor panel seams & corner rivets
+        // Inked armor panel seams
         ctx.strokeStyle = INK;
         ctx.lineWidth = 1.6;
         ctx.beginPath();
@@ -1037,7 +1065,7 @@
         ctx.moveTo(-2, -24); ctx.lineTo(-2, 24);
         ctx.stroke();
 
-        // Central armored turret dome + molten comic reactor eye
+        // Central armored turret dome + glowing crimson-white reactor eye
         ctx.fillStyle = '#1e1b18';
         ctx.strokeStyle = INK;
         ctx.lineWidth = 2.4;
@@ -1053,10 +1081,11 @@
         ctx.arc(-2, 0, 7.2, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(-4.2, -2.2, 2.4, 0, Math.PI * 2);
-        ctx.fill();
+        drawGlowLight(ctx, -3.5, -1.5, 2.4, '255, 110, 150');
+
+        // Front glowing amber headlights
+        drawGlowLight(ctx, 22, -9.5, 1.8, '255, 235, 120');
+        drawGlowLight(ctx, 22, 9.5, 1.8, '255, 235, 120');
 
         // Bold comic cel-shaded front holographic Aegis shield arc
         ctx.strokeStyle = INK;
@@ -1073,13 +1102,13 @@
         ctx.stroke();
       });
 
-      // 7. Colossal Milestone Boss Dreadnought — Comic-Book 8-Turret Crimson Titan Hull
+      // 7. Colossal Milestone Boss Dreadnought — Comic-Book 8-Turret Crimson Titan Hull (luminous rim + 8 lit turret beacons)
       reg('enemy_boss_outer', 670, 290, 260, 260, (ctx) => {
         ctx.scale(2, 2);
         const r0 = 50;
         ctx.lineJoin = 'round';
-        ctx.shadowColor = '#ff2a6d';
-        ctx.shadowBlur = 14;
+
+        drawComicBacklight(ctx, r0 + 15, '255, 42, 109', 0.52);
 
         const bossPath = () => {
           ctx.beginPath();
@@ -1092,27 +1121,29 @@
           ctx.closePath();
         };
 
-        // Base vibrant comic crimson-scarlet armor
+        // Bright crimson-pink neon rim-light around boss silhouette
         bossPath();
-        ctx.fillStyle = '#e11d48';
+        ctx.strokeStyle = 'rgba(255, 145, 185, 0.92)';
+        ctx.lineWidth = 5.4;
+        ctx.stroke();
+
+        bossPath();
+        ctx.fillStyle = '#f43f5e';
         ctx.fill();
 
-        // Cel-shaded lower shadow + Ben-Day halftone comic shading + top white-gold highlight rim
-        ctx.shadowBlur = 0;
         ctx.save();
         bossPath();
         ctx.clip();
-        ctx.fillStyle = '#881337';
+        ctx.fillStyle = '#9f1239';
         ctx.fillRect(-r0 - 14, 4, (r0 + 14) * 2, r0 + 14);
-        drawHalftone(ctx, -r0 - 10, 6, r0 + 10, r0 + 10, 5.2, 1.3, 'rgba(6, 7, 13, 0.46)');
-        ctx.fillStyle = '#fda4af';
+        drawHalftone(ctx, -r0 - 10, 6, r0 + 10, r0 + 10, 5.2, 1.3, 'rgba(6, 7, 13, 0.42)');
+        ctx.fillStyle = '#ffe4e6';
         ctx.fillRect(-r0 - 14, -r0 - 14, (r0 + 14) * 2, 18);
         ctx.restore();
 
-        // Heavy graphic-novel black ink outer silhouette
         bossPath();
         ctx.strokeStyle = INK;
-        ctx.lineWidth = 3.2;
+        ctx.lineWidth = 3.0;
         ctx.stroke();
 
         // Bold inked inner citadel trench + golden comic hazard trim ring
@@ -1125,14 +1156,14 @@
         ctx.stroke();
 
         ctx.strokeStyle = '#ffd600';
-        ctx.lineWidth = 2.4;
+        ctx.lineWidth = 2.6;
         ctx.setLineDash([8, 5]);
         ctx.beginPath();
         ctx.arc(0, 0, r0 * 0.70, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // 8 inked heavy turret pylons with comic gold muzzles & white specular glint
+        // 8 inked heavy turret pylons with brightly glowing gold/white muzzle beacons
         for (let k = 0; k < 8; k++) {
           const a = (k / 8) * Math.PI * 2;
           const cx = Math.cos(a) * (r0 * 0.85);
@@ -1145,8 +1176,8 @@
           ctx.lineTo(cx, cy);
           ctx.stroke();
 
-          ctx.strokeStyle = '#ff4d84';
-          ctx.lineWidth = 2.0;
+          ctx.strokeStyle = '#ff5c91';
+          ctx.lineWidth = 2.2;
           ctx.beginPath();
           ctx.moveTo(Math.cos(a) * (r0 * 0.64), Math.sin(a) * (r0 * 0.64));
           ctx.lineTo(cx, cy);
@@ -1160,10 +1191,7 @@
           ctx.fill();
           ctx.stroke();
 
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(cx - 1.0, cy - 1.0, 1.5, 0, Math.PI * 2);
-          ctx.fill();
+          drawGlowLight(ctx, cx, cy, 1.9, '255, 224, 70');
         }
       });
 
