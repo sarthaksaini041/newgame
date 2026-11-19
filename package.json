@@ -1,0 +1,15 @@
+{
+  "name": "chaos-tether",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CHAOS TETHER — Hyper-Orbit Wrecking Arena. Zero-dependency WebGL2 & Web Audio arcade space action game.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "npx --yes serve -l 3000 .",
+    "preview": "node scripts/build.mjs && npx --yes serve -l 4173 dist"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
