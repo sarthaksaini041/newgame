@@ -122,6 +122,18 @@
     }
   }
 
+  // Fast integer comma formatter (avoids V8 ICU toLocaleString() overhead in hot HUD loop)
+  function formatCommas(n) {
+    const s = String(Math.floor(n));
+    const len = s.length;
+    if (len <= 3) return s;
+    let out = '';
+    const rem = len % 3 || 3;
+    out = s.slice(0, rem);
+    for (let i = rem; i < len; i += 3) out += ',' + s.slice(i, i + 3);
+    return out;
+  }
+
   // O(1) swap-and-pop removal to avoid O(N) array splice shifts and GC churn
   function swapPop(arr, idx) {
     const last = arr.length - 1;
@@ -434,9 +446,10 @@
       this.touchStick = { active: false, pointerId: null, originX: 0, originY: 0, ax: 0, ay: 0 };
       this.camera = { x: ARENA_W / 2, y: ARENA_H / 2, prevX: ARENA_W / 2, prevY: ARENA_H / 2 };
 
-      // Pre-allocated uniform spatial hash grid & zero-GC object pools
+      // Pre-allocated uniform spatial hash grid (tombstone-safe ref table) & zero-GC object pools
       this._gridHead = new Int32Array(GRID_COLS * GRID_ROWS);
       this._gridNext = new Int32Array(1024);
+      this._gridRef = new Array(1024);
       this._particlePool = [];
       this._gemPool = [];
       this._projPool = [];
@@ -1211,8 +1224,9 @@
     }
 
     pushFloatingText(x, y, text, color, life, scale, vx = 0, vy = -46) {
-      // Cap floating texts permanently to prevent late-game O(N^2) de-overlap & glyph spam
+      // Cap floating texts permanently: skip low-priority damage/score pops in O(1) when full
       if (this.floatingTexts.length >= MAX_FLOATING_TEXTS) {
+        if (scale < 1.35) return;
         let evictIdx = -1;
         for (let i = 0; i < this.floatingTexts.length; i++) {
           if (this.floatingTexts[i].scale < 1.35) { evictIdx = i; break; }
@@ -1222,10 +1236,10 @@
         if (this._ftPool.length < 96) this._ftPool.push(old);
         swapPop(this.floatingTexts, evictIdx);
       }
-      // Bounded vertical de-overlap (max 4 passes) so simultaneous banners & numbers never collide
+      // Bounded vertical de-overlap (max 2 passes) so banners & numbers stay legible in O(1) bounded work
       let adjY = y;
       const len = this.floatingTexts.length;
-      for (let pass = 0; pass < 4; pass++) {
+      for (let pass = 0; pass < 2; pass++) {
         let shifted = false;
         for (let i = 0; i < len; i++) {
           const other = this.floatingTexts[i];
@@ -1594,12 +1608,16 @@
       const enemies = this.enemies;
       const n = enemies.length;
       if (n > this._gridNext.length) {
-        this._gridNext = new Int32Array(Math.max(n * 2, 1024));
+        const cap = Math.max(n * 2, 1024);
+        this._gridNext = new Int32Array(cap);
+        this._gridRef = new Array(cap);
       }
       const next = this._gridNext;
+      const ref = this._gridRef;
       for (let i = 0; i < n; i++) {
         const e = enemies[i];
         e._idx = i;
+        ref[i] = e;
         const cx = clamp((e.x / CELL_SIZE) | 0, 0, GRID_COLS - 1);
         const cy = clamp((e.y / CELL_SIZE) | 0, 0, GRID_ROWS - 1);
         const cellIdx = cy * GRID_COLS + cx;
@@ -1609,6 +1627,7 @@
     }
 
     update(dt) {
+      this._vfxThisStep = 0;
       this.elapsed += dt;
       this.wave = 1 + Math.floor(this.elapsed / 15);
       this.shaker.update(dt);
@@ -1921,7 +1940,7 @@
       e.radius = s.r;
       e.hp = hp;
       e.maxHp = hp;
-      e.speed = s.speedBase + this.wave * s.speedWave;
+      e.speed = s.speedBase + Math.min(240, this.wave * s.speedWave);
       e.color = s.color;
       e.xp = s.xp;
       e.score = s.score;
@@ -1979,6 +1998,7 @@
     updateBlackHoles(dt) {
       const head = this._gridHead;
       const next = this._gridNext;
+      const gridRef = this._gridRef;
       const enemies = this.enemies;
       for (let i = this.blackHoles.length - 1; i >= 0; i--) {
         const bh = this.blackHoles[i];
@@ -1990,8 +2010,7 @@
           this._pushShockwave(bh.x, bh.y, 10, impR * 0.72, '#ffd600', 0.75);
           this._pushImpactFlare(bh.x, bh.y, impR * 0.9, '#c084fc', 0.24);
           this.spawnBurst(bh.x, bh.y, '#d8b4fe', 16, 330);
-          // Deal real gravitational implosion AoE damage on collapse via spatial grid (reusable scratch array)
-          this._ensureSpatialGrid();
+          // Deal real gravitational implosion AoE damage on collapse via tombstone-safe spatial grid
           const impR2 = impR * impR;
           const hits = this._bhHits;
           hits.length = 0;
@@ -2003,8 +2022,8 @@
             const rowOff = cy * GRID_COLS;
             for (let cx = ix0; cx <= ix1; cx++) {
               for (let ei = head[rowOff + cx]; ei !== -1; ei = next[ei]) {
-                const e = enemies[ei];
-                if (e && e.hp > 0 && distSq(bh.x, bh.y, e.x, e.y) <= impR2) {
+                const e = gridRef[ei];
+                if (e && e.hp > 0 && e._idx >= 0 && distSq(bh.x, bh.y, e.x, e.y) <= impR2) {
                   hits.push(e);
                 }
               }
@@ -2022,7 +2041,6 @@
           hits.length = 0;
           continue;
         }
-        this._ensureSpatialGrid();
         const pullForce = bh.pullForce || 540;
         const pullR = bh.pullR || 260;
         const pullR2 = pullR * pullR;
@@ -2034,8 +2052,8 @@
           const rowOff = cy * GRID_COLS;
           for (let cx = cx0; cx <= cx1; cx++) {
             for (let ei = head[rowOff + cx]; ei !== -1; ei = next[ei]) {
-              const e = enemies[ei];
-              if (!e || e.hp <= 0) continue;
+              const e = gridRef[ei];
+              if (!e || e.hp <= 0 || e._idx < 0) continue;
               const dx = bh.x - e.x;
               const dy = bh.y - e.y;
               const d2 = dx * dx + dy * dy;
@@ -2182,31 +2200,33 @@
       this.shaker.add(intensity * (isSupersonic ? 0.36 : 0.16));
 
       this.comboTimer = 2.6;
-      window.ChaosAudio.playHit(intensity, this.combo, isSupersonic);
-      const impLen = Math.hypot(impulseX, impulseY);
-      if (impLen > 40) {
-        this.spawnDirectionalBurst(e.x, e.y, impulseX / impLen, impulseY / impLen, isSupersonic ? '#ff2a6d' : '#ffd600', isSupersonic ? 16 : 9, isSupersonic ? 420 : 300, 0, 0.72);
-        this.spawnDirectionalBurst(e.x, e.y, impulseX / impLen, impulseY / impLen, '#ffffff', isSupersonic ? 6 : 3, isSupersonic ? 340 : 240, 1, 0.9);
-      } else {
-        this.spawnBurst(e.x, e.y, isSupersonic ? '#ff2a6d' : '#ffd600', isSupersonic ? 14 : 8, 290);
+      if (++this._vfxThisStep <= 18) {
+        window.ChaosAudio.playHit(intensity, this.combo, isSupersonic);
+        const impLen = Math.hypot(impulseX, impulseY);
+        if (impLen > 40) {
+          this.spawnDirectionalBurst(e.x, e.y, impulseX / impLen, impulseY / impLen, isSupersonic ? '#ff2a6d' : '#ffd600', isSupersonic ? 16 : 9, isSupersonic ? 420 : 300, 0, 0.72);
+          this.spawnDirectionalBurst(e.x, e.y, impulseX / impLen, impulseY / impLen, '#ffffff', isSupersonic ? 6 : 3, isSupersonic ? 340 : 240, 1, 0.9);
+        } else {
+          this.spawnBurst(e.x, e.y, isSupersonic ? '#ff2a6d' : '#ffd600', isSupersonic ? 14 : 8, 290);
+        }
+        if (isSupersonic) {
+          this._pushImpactFlare(e.x, e.y, 88 + e.radius * 1.4, '#ffd600', 0.17);
+          this._pushShockwave(e.x, e.y, e.radius * 0.4, e.radius * 2.8, '#ffd600', 0.78);
+        } else {
+          this._pushImpactFlare(e.x, e.y, 48 + e.radius, '#ffffff', 0.11);
+        }
+        const kickX = impLen > 40 ? (impulseX / impLen) * (isSupersonic ? 72 : 42) : (Math.random() - 0.5) * 34;
+        this.pushFloatingText(
+          e.x + (Math.random() - 0.5) * 18,
+          e.y - e.radius,
+          `${dmg}${isSupersonic ? '!' : ''}`,
+          isSupersonic ? '#ffd600' : '#eef6ff',
+          isSupersonic ? 0.78 : 0.65,
+          isSupersonic ? 1.28 : 0.96,
+          kickX,
+          isSupersonic ? -76 : -54
+        );
       }
-      if (isSupersonic) {
-        this._pushImpactFlare(e.x, e.y, 88 + e.radius * 1.4, '#ffd600', 0.17);
-        this._pushShockwave(e.x, e.y, e.radius * 0.4, e.radius * 2.8, '#ffd600', 0.78);
-      } else {
-        this._pushImpactFlare(e.x, e.y, 48 + e.radius, '#ffffff', 0.11);
-      }
-      const kickX = impLen > 40 ? (impulseX / impLen) * (isSupersonic ? 72 : 42) : (Math.random() - 0.5) * 34;
-      this.pushFloatingText(
-        e.x + (Math.random() - 0.5) * 18,
-        e.y - e.radius,
-        `${dmg}${isSupersonic ? '!' : ''}`,
-        isSupersonic ? '#ffd600' : '#eef6ff',
-        isSupersonic ? 0.78 : 0.65,
-        isSupersonic ? 1.28 : 0.96,
-        kickX,
-        isSupersonic ? -76 : -54
-      );
 
       if (this.mods.lightning > 0 && isSupersonic) {
         const arcScale = Math.min(0.95, 0.48 + this.mods.lightning * 0.09);
@@ -2226,12 +2246,12 @@
       let curr = source;
       const stamp = ++this._lightningStamp;
       source._boltStamp = stamp;
+      const head = this._gridHead;
+      const next = this._gridNext;
+      const gridRef = this._gridRef;
       const enemies = this.enemies;
       const range2 = range * range;
       for (let c = 0; c < chains; c++) {
-        this._ensureSpatialGrid();
-        const head = this._gridHead;
-        const next = this._gridNext;
         let best = null;
         let bestD2 = range2;
         const cx0 = Math.max(0, ((curr.x - range) / CELL_SIZE) | 0);
@@ -2242,8 +2262,8 @@
           const rowOff = cy * GRID_COLS;
           for (let cx = cx0; cx <= cx1; cx++) {
             for (let ei = head[rowOff + cx]; ei !== -1; ei = next[ei]) {
-              const other = enemies[ei];
-              if (!other || other._boltStamp === stamp || other.hp <= 0) continue;
+              const other = gridRef[ei];
+              if (!other || other._boltStamp === stamp || other.hp <= 0 || other._idx < 0) continue;
               const d2 = distSq(curr.x, curr.y, other.x, other.y);
               if (d2 < bestD2) { bestD2 = d2; best = other; }
             }
@@ -2347,11 +2367,11 @@
         this.spawnEnemy('mini', ex + 14, ey);
       } else if (eType === 'bomber') {
         this._pushShockwave(ex, ey, 15, 135, '#05ffa1', 0.95);
-        // Spatial-grid accelerated bomber blast (re-entrancy safe for chained bombers)
-        this._ensureSpatialGrid();
+        // Tombstone-safe spatial-grid bomber blast (ZERO mid-cascade grid rebuilds!)
         const hits = [];
         const head = this._gridHead;
         const next = this._gridNext;
+        const gridRef = this._gridRef;
         const enemies = this.enemies;
         const cx0 = Math.max(0, ((ex - 135) / CELL_SIZE) | 0);
         const cx1 = Math.min(GRID_COLS - 1, ((ex + 135) / CELL_SIZE) | 0);
@@ -2361,8 +2381,8 @@
           const rowOff = cy * GRID_COLS;
           for (let cx = cx0; cx <= cx1; cx++) {
             for (let ei = head[rowOff + cx]; ei !== -1; ei = next[ei]) {
-              const other = enemies[ei];
-              if (other && other !== e && other.hp > 0 && distSq(ex, ey, other.x, other.y) <= 135 * 135) {
+              const other = gridRef[ei];
+              if (other && other !== e && other.hp > 0 && other._idx >= 0 && distSq(ex, ey, other.x, other.y) <= 135 * 135) {
                 hits.push(other);
               }
             }
@@ -2489,6 +2509,9 @@
     }
 
     updateProjectiles(dt) {
+      const head = this._gridHead;
+      const next = this._gridNext;
+      const gridRef = this._gridRef;
       const enemies = this.enemies;
       const lockR = 240 + this.mods.shrapnel * 24;
       const lockR2 = lockR * lockR;
@@ -2503,11 +2526,11 @@
           continue;
         }
 
-        // Cached homing target with staggered 0.12s re-acquisition (cuts spatial grid queries by ~85%)
+        // Cached homing target with staggered 0.12s re-acquisition (tombstone-safe, ZERO mid-loop grid rebuilds!)
         pr.retargetCd = (pr.retargetCd || 0) - dt;
         let nearest = pr.target;
         let bestD2 = lockR2;
-        if (nearest && nearest.hp > 0 && nearest._idx !== undefined && nearest._idx >= 0 && enemies[nearest._idx] === nearest) {
+        if (nearest && nearest.hp > 0 && nearest._idx >= 0 && enemies[nearest._idx] === nearest) {
           const td2 = distSq(pr.x, pr.y, nearest.x, nearest.y);
           if (td2 < lockR2 * 1.44) {
             bestD2 = td2;
@@ -2522,9 +2545,6 @@
 
         if (!nearest || pr.retargetCd <= 0) {
           pr.retargetCd = 0.12;
-          this._ensureSpatialGrid();
-          const head = this._gridHead;
-          const next = this._gridNext;
           const cx0 = Math.max(0, ((pr.x - lockR) / CELL_SIZE) | 0);
           const cx1 = Math.min(GRID_COLS - 1, ((pr.x + lockR) / CELL_SIZE) | 0);
           const cy0 = Math.max(0, ((pr.y - lockR) / CELL_SIZE) | 0);
@@ -2535,8 +2555,8 @@
             const rowOff = cy * GRID_COLS;
             for (let cx = cx0; cx <= cx1; cx++) {
               for (let ei = head[rowOff + cx]; ei !== -1; ei = next[ei]) {
-                const e = enemies[ei];
-                if (!e || e.hp <= 0) continue;
+                const e = gridRef[ei];
+                if (!e || e.hp <= 0 || e._idx < 0) continue;
                 const d2 = distSq(pr.x, pr.y, e.x, e.y);
                 if (d2 < bestD2) { bestD2 = d2; nearest = e; }
               }
@@ -2555,10 +2575,7 @@
         pr.x += pr.vx * dt;
         pr.y += pr.vy * dt;
 
-        // Spatial grid accelerated impact check (only checks 1-4 immediate cells)
-        this._ensureSpatialGrid();
-        const head = this._gridHead;
-        const next = this._gridNext;
+        // Tombstone-safe spatial grid impact check (only checks 1-4 immediate cells)
         const hcx0 = Math.max(0, ((pr.x - 64) / CELL_SIZE) | 0);
         const hcx1 = Math.min(GRID_COLS - 1, ((pr.x + 64) / CELL_SIZE) | 0);
         const hcy0 = Math.max(0, ((pr.y - 64) / CELL_SIZE) | 0);
@@ -2568,12 +2585,12 @@
           const rowOff = cy * GRID_COLS;
           for (let cx = hcx0; cx <= hcx1 && !hit; cx++) {
             for (let ei = head[rowOff + cx]; ei !== -1; ei = next[ei]) {
-              const e = enemies[ei];
-              if (!e || e.hp <= 0) continue;
+              const e = gridRef[ei];
+              if (!e || e.hp <= 0 || e._idx < 0) continue;
               const hitR = e.radius + 6;
               if (distSq(pr.x, pr.y, e.x, e.y) <= hitR * hitR) {
                 const realIdx = e._idx;
-                if (realIdx !== undefined && realIdx >= 0 && enemies[realIdx] === e) {
+                if (realIdx >= 0 && enemies[realIdx] === e) {
                   this.damageEnemy(realIdx, Math.round(pr.dmg), pr.vx * 0.2, pr.vy * 0.2, false);
                   pr.target = null;
                   if (this._projPool.length < 160) this._projPool.push(pr);
@@ -2843,7 +2860,7 @@
       }
 
       if (c.score !== this.score) {
-        setText(scoreText, String(this.score).padStart(6, '0').replace(/\B(?=(\d{3})+(?!\d))/g, ','));
+        setText(scoreText, this.score < 100000 ? String(this.score).padStart(6, '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',') : formatCommas(this.score));
         c.score = this.score;
       }
 
@@ -2878,7 +2895,7 @@
             c.sideMult = this.combo;
           }
           if (c.sideBonus !== this.comboScore) {
-            setText(sideComboBonus, `+${this.comboScore.toLocaleString()}`);
+            setText(sideComboBonus, `+${formatCommas(this.comboScore)}`);
             c.sideBonus = this.comboScore;
           }
           const sideBump = this._sideBumpTimer > 0;
@@ -2904,10 +2921,10 @@
           const item = this._comboFeed[i];
           if (item) {
             if (s.lastAccent !== item.accent) {
-              s.el.style.setProperty('--feed-accent', item.accent);
+              s.el.style.borderRightColor = item.accent;
               s.lastAccent = item.accent;
             }
-            const ptsStr = `+${item.pts.toLocaleString()}`;
+            const ptsStr = `+${formatCommas(item.pts)}`;
             if (s.lastPts !== ptsStr) {
               setText(s.ptsEl, ptsStr);
               s.lastPts = ptsStr;

@@ -318,6 +318,7 @@ html, body {
   padding-top: 2px;
   pointer-events: none;
   z-index: 11;
+  contain: layout style;
 }
 
 .score-display {
@@ -329,12 +330,12 @@ html, body {
   font-variant-numeric: tabular-nums;
   color: #f8fbff;
   text-shadow: 0 0 18px rgba(0, 240, 255, 0.45), 0 2px 0 rgba(2, 22, 46, 0.85);
-  transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1), text-shadow 0.14s ease;
+  transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
 
 .score-display.score-pop {
   transform: scale(1.07);
-  text-shadow: 0 0 24px rgba(255, 214, 0, 0.68), 0 0 14px rgba(0, 240, 255, 0.65), 0 2px 0 rgba(2, 22, 46, 0.9);
 }
 
 .combo-display {
@@ -348,6 +349,7 @@ html, body {
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 12px rgba(255, 214, 0, 0.55);
   transition: transform 0.08s ease;
+  will-change: transform;
 }
 
 /* Screen-Side Combo Surge & Live Score Feed (fixed out-of-flow -> zero CLS) */

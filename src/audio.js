@@ -16,7 +16,7 @@
  */
 (() => {
   const PENTATONIC_HZ = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];
-  const MAX_VOICES = 28;
+  const MAX_VOICES = 18;
 
   // Lush interstellar chord progression: [subRoot, padVoice1, padVoice2, padVoice3, padVoice4, bellScaleHz[]]
   const COSMIC_CHORDS = [
@@ -47,17 +47,17 @@
   ];
 
   const THROTTLE = {
-    hit: 0.035,
-    xp: 0.03,
-    dash: 0.06,
-    catapult: 0.08,
-    wall: 0.065,
-    hurt: 0.15,
+    hit: 0.065,
+    xp: 0.055,
+    dash: 0.07,
+    catapult: 0.09,
+    wall: 0.08,
+    hurt: 0.16,
     overdrive: 0.3,
     levelup: 0.3,
     gameover: 0.5,
     boss: 0.5,
-    explosion: 0.045,
+    explosion: 0.08,
   };
 
   class SoundEngine {
@@ -342,6 +342,7 @@
       const echoOut = ctx.createGain();
       echoOut.gain.value = 0.42;
 
+      // Non-cyclic dual-tap stereo shimmer echo (keeps Web Audio on 128-sample SIMD blocks!)
       echoL.connect(echoPanL);
       echoPanL.connect(echoOut);
       echoL.connect(echoFilter);
@@ -349,7 +350,6 @@
       echoFb.connect(echoR);
       echoR.connect(echoPanR);
       echoPanR.connect(echoOut);
-      echoR.connect(echoFb);
       echoOut.connect(reverb);
       echoOut.connect(out);
 
