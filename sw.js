@@ -1,7 +1,7 @@
 /*
  * CHAOS TETHER — Offline-First PWA Service Worker
  */
-const CACHE_NAME = 'chaos-tether-pwa-v1';
+const CACHE_NAME = 'chaos-tether-pwa-v2';
 const CORE_ASSETS = [
   '/',
   '/index.html',

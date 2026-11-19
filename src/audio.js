@@ -65,6 +65,11 @@
       this.ctx = null;
       this.muted = false;
       this.paused = false;
+      this.isMobile = Boolean(
+        (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+        /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')
+      );
+      this.maxVoices = this.isMobile ? 10 : MAX_VOICES;
       this.noiseBuffer = null;
       this.pinkNoiseBuffer = null;
       this.reverbIR = null;
@@ -78,9 +83,9 @@
       this._motionLastSp = -1;
       this._motionLastTension = -1;
       this._motionLastActive = false;
-      this.masterVolume = 0.85;
-      this.musicVolume = 0.38;
-      this.sfxVolume = 0.88;
+      this.masterVolume = this.isMobile ? 0.78 : 0.85;
+      this.musicVolume = this.isMobile ? 0.32 : 0.38;
+      this.sfxVolume = this.isMobile ? 0.74 : 0.88;
       this._bindLifecycle();
     }
 
@@ -89,7 +94,12 @@
       if (!this.ctx) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return null;
-        this.ctx = new AudioCtx({ latencyHint: 'interactive' });
+        // Mobile hardware audio pipelines underrun/crackle with 'interactive'; 'playback' gives glitch-free buffers
+        try {
+          this.ctx = new AudioCtx({ latencyHint: this.isMobile ? 'playback' : 'interactive' });
+        } catch {
+          this.ctx = new AudioCtx();
+        }
 
         this.master = this.ctx.createGain();
         this.master.gain.value = this.muted ? 0 : this.masterVolume;
@@ -101,10 +111,6 @@
         this.compressor.attack.value = 0.005;
         this.compressor.release.value = 0.22;
 
-        this.analyser = this.ctx.createAnalyser();
-        this.analyser.fftSize = 1024;
-        this._timeDomainBuf = new Float32Array(1024);
-
         this.sfxBus = this.ctx.createGain();
         this.sfxBus.gain.value = this.sfxVolume;
         this.musicBus = this.ctx.createGain();
@@ -113,12 +119,21 @@
         this.sfxBus.connect(this.master);
         this.musicBus.connect(this.master);
         this.master.connect(this.compressor);
-        this.compressor.connect(this.analyser);
-        this.analyser.connect(this.ctx.destination);
+        if (!this.isMobile) {
+          this.analyser = this.ctx.createAnalyser();
+          this.analyser.fftSize = 1024;
+          this._timeDomainBuf = new Float32Array(1024);
+          this.compressor.connect(this.analyser);
+          this.analyser.connect(this.ctx.destination);
+        } else {
+          this.analyser = null;
+          this.compressor.connect(this.ctx.destination);
+        }
 
         this.noiseBuffer = this._createNoiseBuffer(1.0);
-        this.pinkNoiseBuffer = this._createPinkNoiseBuffer(3.0);
-        this.reverbIR = this._createSpaceReverbIR(3.0, 2.6);
+        this.pinkNoiseBuffer = this._createPinkNoiseBuffer(this.isMobile ? 2.0 : 3.0);
+        // Skip heavy 3.0s stereo FFT ConvolverNode IR on mobile to prevent audio thread underruns/crackling
+        this.reverbIR = this.isMobile ? null : this._createSpaceReverbIR(3.0, 2.6);
         this.warmWave = this._createWarmPadWave();
       }
       if (this.ctx.state === 'suspended' && !document.hidden) {
@@ -231,12 +246,17 @@
       const ctx = this.ensureContext();
       if (!ctx || ctx.state !== 'running') return null;
       const now = ctx.currentTime;
-      const baseGap = THROTTLE[name] || 0;
-      const gap = this.activeVoices >= 16 ? baseGap * 1.75 : baseGap;
+      const baseGap = (THROTTLE[name] || 0) * (this.isMobile ? 1.45 : 1.0);
+      const gap = this.activeVoices >= (this.maxVoices - 3) ? baseGap * 1.75 : baseGap;
       if (this.lastPlayed[name] !== undefined && now - this.lastPlayed[name] < gap) return null;
-      if (this.activeVoices + cost > MAX_VOICES) return null;
+      if (this.activeVoices + cost > this.maxVoices) return null;
       this.lastPlayed[name] = now;
       return ctx;
+    }
+
+    _t0(ctx) {
+      // Slight lookahead prevents scheduling in the past during mobile main-thread jitter (zero clicks/pops)
+      return ctx.currentTime + (this.isMobile ? 0.014 : 0.004);
     }
 
     _track(node, cost, stopAt, cleanupNodes = null) {
@@ -318,13 +338,20 @@
       out.gain.linearRampToValueAtTime(1.0, now + 3.5);
       out.connect(this.musicBus);
 
-      // Lush stereo space reverb send
-      const reverb = ctx.createConvolver();
-      reverb.buffer = this.reverbIR;
-      const reverbWet = ctx.createGain();
-      reverbWet.gain.value = 0.62;
-      reverb.connect(reverbWet);
-      reverbWet.connect(out);
+      // Lush stereo space reverb send (on mobile, use lightweight warm low-pass bus instead of 3s FFT ConvolverNode)
+      let reverb;
+      if (this.reverbIR) {
+        reverb = ctx.createConvolver();
+        reverb.buffer = this.reverbIR;
+        const reverbWet = ctx.createGain();
+        reverbWet.gain.value = 0.62;
+        reverb.connect(reverbWet);
+        reverbWet.connect(out);
+      } else {
+        reverb = ctx.createGain();
+        reverb.gain.value = 0.34;
+        reverb.connect(out);
+      }
 
       // Gentle stereo cosmic shimmer echo (for star-bells & high pad bloom)
       const echoL = ctx.createDelay(1.0);
@@ -389,21 +416,22 @@
       subOsc.start(now);
       nodes.push(subOsc);
 
-      // 2. Lush stereo-spread warm harmonic pad voices (4 notes × stereo detuned pair)
+      // 2. Lush stereo-spread warm harmonic pad voices (single voice per note on mobile for glitch-free audio!)
       const padOscGroups = [];
       const voicePans = [-0.62, -0.24, 0.24, 0.62];
       const voiceGains = [0.11, 0.095, 0.075, 0.055];
+      const detunes = this.isMobile ? [0] : [-5.5, 5.5];
 
       chord0.voices.forEach((freq, i) => {
         const pair = [];
-        [-5.5, 5.5].forEach((detune, side) => {
+        detunes.forEach((detune, side) => {
           const o = ctx.createOscillator();
           const g = ctx.createGain();
           const pan = this._createPanner(voicePans[i] * (side === 0 ? 1 : -0.7));
           o.setPeriodicWave(this.warmWave);
           o.frequency.value = freq;
           o.detune.value = detune + i * 1.1;
-          g.gain.value = voiceGains[i];
+          g.gain.value = this.isMobile ? voiceGains[i] * 1.35 : voiceGains[i];
           o.connect(g);
           g.connect(pan);
           pan.connect(filter);
@@ -470,10 +498,10 @@
         for (let i = 0; i < padOscGroups.length; i++) {
           const targetF = ch.voices[i];
           const pair = padOscGroups[i];
-          pair[0].frequency.cancelScheduledValues(t);
-          pair[1].frequency.cancelScheduledValues(t);
-          pair[0].frequency.setTargetAtTime(targetF, t, 2.6);
-          pair[1].frequency.setTargetAtTime(targetF, t, 2.8);
+          for (let j = 0; j < pair.length; j++) {
+            pair[j].frequency.cancelScheduledValues(t);
+            pair[j].frequency.setTargetAtTime(targetF, t, 2.6 + j * 0.2);
+          }
         }
         airOscs[0].frequency.cancelScheduledValues(t);
         airOscs[1].frequency.cancelScheduledValues(t);
@@ -641,6 +669,7 @@
     }
 
     updateMotionAudio(speedNorm = 0, stretchNorm = 0, yankCharge = 0, active = true) {
+      if (this.isMobile) return;
       if (!this.ctx || this.ctx.state !== 'running') return;
       if (!active && !this.motion) return;
       const m = this._ensureMotionAudio();
@@ -726,31 +755,31 @@
     }
 
     playHit(intensity = 1, combo = 1, isSupersonic = false) {
-      const ctx = this._voice('hit', isSupersonic ? 4 : 3);
+      const ctx = this._voice('hit', isSupersonic ? 3 : 2);
       if (!ctx) return;
-      const now = ctx.currentTime;
-      const k = Math.min(1.6, Math.max(0.3, intensity));
-      this._noise(now, isSupersonic ? 0.16 : 0.12, (isSupersonic ? 0.34 : 0.26) * k, 'lowpass', (isSupersonic ? 2100 : 1450) * k, 85, 0.85);
-      this._osc('triangle', (isSupersonic ? 175 : 145) * k + Math.random() * 20, 38, now, isSupersonic ? 0.15 : 0.11, 0.40 * k);
-      if (isSupersonic) {
+      const now = this._t0(ctx);
+      const k = Math.min(1.5, Math.max(0.3, intensity));
+      this._noise(now, isSupersonic ? 0.14 : 0.10, (isSupersonic ? 0.30 : 0.24) * k, 'lowpass', (isSupersonic ? 2100 : 1450) * k, 85, 0.85);
+      this._osc('triangle', (isSupersonic ? 175 : 145) * k + Math.random() * 20, 38, now, isSupersonic ? 0.14 : 0.10, 0.36 * k);
+      if (isSupersonic && !this.isMobile) {
         // Extra sub-bass sonic crack + metallic harmonic overtone on supersonic smash
-        this._osc('sine', 108, 32, now, 0.18, 0.34);
-        this._osc('sine', 920 + Math.random() * 180, 420, now, 0.11, 0.085);
+        this._osc('sine', 108, 32, now, 0.16, 0.30);
+        this._osc('sine', 920 + Math.random() * 180, 420, now, 0.10, 0.08);
       }
       const idx = Math.min(PENTATONIC_HZ.length - 1, Math.floor((combo - 1) / 2));
-      this._osc('sine', PENTATONIC_HZ[idx], null, now, 0.16, 0.085);
+      this._osc('sine', PENTATONIC_HZ[idx], null, now, 0.14, 0.08);
     }
 
     playExplosion(big = false, isSupersonic = false) {
       const ctx = this._voice('explosion', big || isSupersonic ? 3 : 2);
       if (!ctx) return;
-      const now = ctx.currentTime;
-      const dur = big ? 0.88 : (isSupersonic ? 0.44 : 0.34);
-      this._noise(now, dur, big ? 0.56 : (isSupersonic ? 0.36 : 0.28), 'lowpass', big ? 2400 : (isSupersonic ? 1900 : 1350), 50, 0.72);
-      this._osc('sine', big ? 86 : (isSupersonic ? 104 : 118), 28, now, dur, big ? 0.52 : (isSupersonic ? 0.34 : 0.27));
-      if (big || isSupersonic) {
+      const now = this._t0(ctx);
+      const dur = big ? 0.78 : (isSupersonic ? 0.38 : 0.30);
+      this._noise(now, dur, big ? 0.50 : (isSupersonic ? 0.32 : 0.26), 'lowpass', big ? 2400 : (isSupersonic ? 1900 : 1350), 50, 0.72);
+      this._osc('sine', big ? 86 : (isSupersonic ? 104 : 118), 28, now, dur, big ? 0.46 : (isSupersonic ? 0.30 : 0.24));
+      if ((big || isSupersonic) && !this.isMobile) {
         // Crystalline plasma-hull shatter crackle
-        this._noise(now + 0.015, 0.14, big ? 0.22 : 0.15, 'bandpass', 3200, 900, 1.4);
+        this._noise(now + 0.015, 0.14, big ? 0.20 : 0.14, 'bandpass', 3200, 900, 1.4);
       }
     }
 
